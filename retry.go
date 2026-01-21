@@ -1,6 +1,10 @@
 package sidekik
 
-import "time"
+import (
+	"context"
+	"fmt"
+	"time"
+)
 
 type RetryOptions struct {
 	// Tries is the number of times the function should be retried
@@ -11,19 +15,20 @@ type RetryOptions struct {
 	// SleepSeconds is the number of seconds to wait before retrying
 	// This will be ignored if a value for Backoff is set
 	SleepSeconds uint
+	// RetryableFunc is a function that returns true if the error is retryable
+	// If RetryableFunc is not set, all errors are considered retryable
+	RetryableFunc func(uint, error) bool
 }
 
 // Retry retries a given function based on the given options
-func Retry(opts RetryOptions, fn func() error) error {
+func Retry(ctx context.Context, fn func() error, opts RetryOptions) error {
 	tries := opts.Tries
 	backoff := opts.Backoff
 
-	if tries == 0 && len(backoff) == 0 {
-		tries = 1
-	}
-
 	if len(backoff) > 0 {
 		tries = uint(len(backoff)) + 1
+	} else if tries == 0 {
+		tries = 1
 	}
 
 	sleepSeconds := opts.SleepSeconds
@@ -33,16 +38,30 @@ func Retry(opts RetryOptions, fn func() error) error {
 
 	var err error
 	for attempts := uint(0); attempts < tries; attempts++ {
+		if err = ctx.Err(); err != nil {
+			return fmt.Errorf("retry cancelled after %d attempt(s): %w", attempts, err)
+		}
+
 		if attempts > 0 {
 			delay := sleepSeconds
 			if len(backoff) > 0 {
 				delay = backoff[attempts-1]
 			}
 
-			time.Sleep(time.Duration(delay) * time.Second)
+			// Use select to respect context cancellation during sleep
+			timer := time.NewTimer(time.Duration(delay) * time.Second)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return fmt.Errorf("retry cancelled after %d attempt(s): %w", attempts, ctx.Err())
+			case <-timer.C:
+			}
 		}
 
 		if err = fn(); err != nil {
+			if opts.RetryableFunc != nil && !opts.RetryableFunc(attempts, err) {
+				return err
+			}
 			continue
 		}
 
