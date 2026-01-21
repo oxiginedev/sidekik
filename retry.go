@@ -21,7 +21,7 @@ type RetryOptions struct {
 }
 
 // Retry retries a given function based on the given options
-func Retry(ctx context.Context, fn func() error, opts RetryOptions) error {
+func Retry(ctx context.Context, fn func(context.Context) error, opts RetryOptions) error {
 	tries := opts.Tries
 	backoff := opts.Backoff
 
@@ -58,7 +58,7 @@ func Retry(ctx context.Context, fn func() error, opts RetryOptions) error {
 			}
 		}
 
-		if err = fn(); err != nil {
+		if err = fn(ctx); err != nil {
 			if opts.RetryableFunc != nil && !opts.RetryableFunc(attempts, err) {
 				return err
 			}
