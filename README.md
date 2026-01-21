@@ -13,3 +13,7 @@ go get github.com/oxiginedev/sidekik
 ### sidekik.Retry
 
 Retry retries a given function based on the provided options. If no options are provided, it will retry the function once, with a one second delay in-between.
+
+### sidekik.IsStringEmpty
+
+IsStringEmpty checks if a string is empty.
